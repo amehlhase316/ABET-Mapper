@@ -1,0 +1,453 @@
+:root {
+  color-scheme: light;
+  font-family: Arial, Helvetica, sans-serif;
+  background: #f5f6f8;
+  color: #1f2933;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+header,
+.section-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 28px;
+}
+
+h2 {
+  font-size: 18px;
+}
+
+p,
+.status {
+  color: #52606d;
+}
+
+.panel {
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.subpanel {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid #d9e2ec;
+}
+
+details {
+  margin-top: 14px;
+}
+
+details > summary {
+  cursor: pointer;
+  font-weight: 700;
+  padding: 8px 0;
+}
+
+.status {
+  margin: 12px 0;
+  min-height: 22px;
+}
+
+.hidden {
+  display: none;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.compact-grid {
+  grid-template-columns: minmax(0, 260px);
+}
+
+.wide {
+  grid-column: 1 / -1;
+}
+
+.inline-form {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: #334e68;
+}
+
+input,
+select,
+textarea,
+button {
+  min-height: 36px;
+  border: 1px solid #bcccdc;
+  border-radius: 6px;
+  font: inherit;
+}
+
+input,
+select,
+textarea {
+  padding: 0 10px;
+  background: #ffffff;
+}
+
+textarea {
+  min-height: 64px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  resize: vertical;
+}
+
+button {
+  padding: 0 14px;
+  background: #1f5f8b;
+  color: #ffffff;
+  border-color: #1f5f8b;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+button.secondary,
+header button {
+  background: #ffffff;
+  color: #1f5f8b;
+}
+
+button.danger {
+  background: #ffffff;
+  color: #b42318;
+  border-color: #f4c7c3;
+}
+
+.small-button {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+
+th,
+td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #edf2f7;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  font-size: 12px;
+  text-transform: uppercase;
+  color: #52606d;
+  background: #f8fafc;
+}
+
+.outcome-list,
+.assignment-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.outcome-item,
+.assignment-group,
+.outcome-panel {
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.outcome-panel {
+  background: #ffffff;
+}
+
+.outcome-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.outcome-body {
+  display: grid;
+  gap: 12px;
+}
+
+.setup-section {
+  margin-top: 4px;
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.setup-section > summary {
+  position: relative;
+  padding: 10px 12px;
+  list-style: none;
+}
+
+.setup-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.setup-section > summary::before {
+  content: "+";
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  width: 18px;
+  color: #1f5f8b;
+  font-weight: 700;
+}
+
+.setup-section[open] > summary::before {
+  content: "-";
+}
+
+.summary-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-left: 24px;
+}
+
+.setup-section > .assignment-list,
+.evaluation-body {
+  padding: 0 12px 12px;
+}
+
+.evaluation-setup {
+  background: #ffffff;
+  border-color: #bcccdc;
+}
+
+.assignment-check {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.outcome-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.outcome-item.active {
+  border-color: #1f5f8b;
+  background: #f7fbff;
+}
+
+.outcome-item strong,
+.assignment-group strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.assignment-item,
+.rubric-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.rubric-list {
+  grid-column: 2 / -1;
+  display: grid;
+  gap: 2px;
+  color: #52606d;
+  font-size: 13px;
+}
+
+.rubric-item {
+  grid-template-columns: 1fr auto;
+  padding: 2px 0 2px 18px;
+}
+
+.criteria-list {
+  display: grid;
+  gap: 8px;
+}
+
+.evaluation-assignment {
+  border: 1px solid #edf2f7;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #ffffff;
+}
+
+.criteria-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto 130px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.criteria-row input[type="number"] {
+  width: 100%;
+}
+
+.results-list {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.result-card {
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.overall-attained {
+  margin-top: 12px;
+  padding: 10px;
+  border-left: 4px solid #1f5f8b;
+  background: #f8fafc;
+}
+
+.overall-attained strong {
+  font-size: 20px;
+}
+
+h3 {
+  margin: 16px 0 8px;
+  font-size: 15px;
+}
+
+.summary-cell {
+  border-radius: 6px;
+  padding: 10px;
+  background: #f8fafc;
+}
+
+.summary-cell strong {
+  display: block;
+  font-size: 22px;
+}
+
+.student-details {
+  margin-top: 14px;
+}
+
+.student-details > summary {
+  cursor: pointer;
+  font-weight: 700;
+  padding: 8px 0;
+}
+
+.student-row {
+  border-top: 1px solid #edf2f7;
+  padding: 8px 0;
+}
+
+.student-row summary {
+  cursor: pointer;
+}
+
+.badge {
+  display: inline-block;
+  min-width: 110px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  text-align: center;
+  font-size: 12px;
+}
+
+.exceeds {
+  background: #d9f99d;
+}
+
+.meets {
+  background: #dbeafe;
+}
+
+.does_not_meet {
+  background: #fee2e2;
+}
+
+.unknown {
+  background: #e5e7eb;
+}
+
+.muted {
+  color: #7b8794;
+}
+
+.policy-summary {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #eef6fb;
+  color: #334e68;
+  font-size: 13px;
+}
+
+@media (max-width: 760px) {
+  header,
+  .section-header,
+  .inline-form {
+    display: grid;
+    align-items: stretch;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .compact-grid,
+  .criteria-row,
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+}

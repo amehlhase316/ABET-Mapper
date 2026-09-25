@@ -1,0 +1,15 @@
+# Local ABET data can contain student information and must never be committed.
+ABET Mapper Data/
+
+# Python and local development files.
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.DS_Store
+
+# Editor and operating-system files.
+.idea/
+.vscode/
+Thumbs.db

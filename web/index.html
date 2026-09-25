@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ABET Mapper</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>ABET Mapper</h1>
+          <p id="sessionSummary">Checking Canvas session...</p>
+        </div>
+      </header>
+
+      <section id="coursePanel" class="panel hidden">
+        <div class="section-header">
+          <h2>Courses</h2>
+          <form id="courseFilter" class="inline-form">
+            <label>
+              Year
+              <input id="year" inputmode="numeric" maxlength="4" placeholder="Year">
+            </label>
+            <label>
+              Session
+              <select id="term">
+                <option value="">Any</option>
+                <option value="spring">Spring</option>
+                <option value="summer">Summer</option>
+                <option value="fall">Fall</option>
+              </select>
+            </label>
+            <button type="submit">Apply Filter</button>
+          </form>
+        </div>
+        <div id="courseStatus" class="status">Connect to Canvas to load courses.</div>
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th>Course</th>
+              <th>Code</th>
+              <th>Term</th>
+              <th>Students</th>
+              <th>ID</th>
+            </tr>
+          </thead>
+          <tbody id="courses"></tbody>
+        </table>
+      </section>
+
+      <section id="mappingPanel" class="panel hidden">
+        <div class="section-header">
+          <div>
+            <h2>ABET Outcomes</h2>
+            <p id="selectedCourse">No course selected.</p>
+          </div>
+          <p class="policy-summary">CanvasOre scaled scoring · KPI count attainment</p>
+        </div>
+
+        <form id="outcomeForm" class="inline-form">
+          <label>
+            ABET outcome
+            <select id="outcomeName">
+              <option value="ABET-1">ABET-1</option>
+              <option value="ABET-2">ABET-2</option>
+              <option value="ABET-3">ABET-3</option>
+              <option value="ABET-4">ABET-4</option>
+              <option value="ABET-5">ABET-5</option>
+              <option value="ABET-6">ABET-6</option>
+              <option value="ABET-7">ABET-7</option>
+              <option value="SER-1">SER-1</option>
+              <option value="SER-2">SER-2</option>
+            </select>
+          </label>
+          <button type="submit">Add Outcome</button>
+          <label>
+            Load mapping JSON
+            <input id="mappingFile" type="file" accept=".json,application/json">
+          </label>
+          <button id="exportMappingButton" type="button" class="secondary" disabled>Export Mapping JSON</button>
+        </form>
+
+        <div id="mappingStatus" class="status">Select a course to begin.</div>
+        <details open>
+          <summary>Outcomes</summary>
+          <div id="outcomes" class="outcome-list"></div>
+        </details>
+
+        <button id="calculateButton" type="button">Calculate Attainment</button>
+        <button id="exportReportButton" type="button" class="secondary" disabled>Export Excel Report</button>
+        <button id="exportHtmlButton" type="button" class="secondary" disabled>Export HTML Report</button>
+        <div id="exportStatus" class="status"></div>
+        <div id="results" class="results-list"></div>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>

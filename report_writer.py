@@ -88,13 +88,19 @@ def methodology_rows(course: dict[str, Any], outcomes: list[dict[str, Any]], res
         ["Calculation Summary", "Each selected Canvas evidence item counts as one KPI. Evidence can be a whole assessment score or a rubric criterion."],
         ["Item Attainment", "Each evidence item is classified as Attains, Does Not Meet, or Unknown. An item uses its own Attains threshold when specified; otherwise it uses the outcome threshold."],
         ["Thresholds", "Attains thresholds are inclusive, so a score equal to the threshold is counted as Attains. Instructors may lower an individual evidence item's threshold when appropriate."],
-        ["Unknown Policy", "Evidence is Unknown when Canvas marks the assessment missing or excused with no points, when Canvas late policy status is missing or excused with no points, when there is no actual submission evidence and no points, or when required score/rubric data is unavailable. Zero scores with actual submission evidence are included as 0% and count as Does Not Meet."],
-        ["Known Evidence", "Unknown evidence is excluded from the KPI denominator. If a student has no known evidence for an outcome, the student's result is Unknown."],
-        ["Student Outcome Rule", "For each student, divide the number of known KPI/evidence items classified as Attains by the total number of known KPI/evidence items. The student Attains the outcome when this percentage is at or above the outcome threshold."],
+        ["Evidence Status Rules"],
+        ["Missing or Excused", "When an assessment has no points and Canvas marks it Missing or Excused, including through a late-policy status, the evidence is Unknown."],
+        ["No Submitted Work", "When Canvas contains no evidence that the student submitted the assessment, no points or a recorded zero are treated as Unknown."],
+        ["Unavailable Scoring Data", "When required assessment or rubric scoring information is unavailable, the evidence is Unknown."],
+        ["Zero With Submitted Work", "When Canvas records a zero for work the student actually submitted, the evidence is included as 0% and classified as Does Not Meet."],
+        ["Student Rollup When Evidence Is Unknown"],
+        ["Attains", "If the student reaches the outcome threshold even when every Unknown item is treated as not attained, the result is Attains."],
+        ["Does Not Meet", "If the student remains below the outcome threshold even when every Unknown item is treated as attained, the result is Does Not Meet."],
+        ["Unknown", "If the Unknown items could change whether the student reaches the outcome threshold, the result remains Unknown."],
         ["Course Outcome Summary", "The report counts students as Attains, Does Not Meet, or Unknown. The overall attainment percentage is Attains divided by Attains plus Does Not Meet; Unknown students are reported separately."],
         ["Attainment Strategy", report_strategy_label(metadata, results)],
         ["Strategy Question", report_strategy_question(metadata, results)],
-        ["Strategy Formula", report_strategy_formula(metadata, results)],
+        ["Decision Rule", report_strategy_formula(metadata, results)],
         ["Executive Summary"],
         ["Outcome", "Official ABET Wording", "Overall Attained", "Target", "Attains", "Does Not Meet", "Unknown"],
     ]
@@ -206,7 +212,7 @@ def outcome_detail_rows(result: dict[str, Any]) -> list[list[Any]]:
         rows.append(
             [
                 f"S{index}",
-                "" if student.get("score_percent") is None else f"{student.get('score_percent')}%",
+                student_attainment_value(student),
                 student_category_label(student),
             ]
             + [student_detail_value(detail_by_key.get(criterion.get("criterion_key"))) for criterion in criteria]
@@ -222,6 +228,17 @@ def student_detail_value(detail: dict[str, Any] | None) -> str:
     if detail.get("score_percent") is None:
         return ""
     return f"{detail.get('score_percent')}% ({category_symbol(detail.get('category_key'))})"
+
+
+def student_attainment_value(student: dict[str, Any]) -> str:
+    minimum = student.get("attainment_min_percent")
+    maximum = student.get("attainment_max_percent")
+    if minimum is not None and maximum is not None:
+        if minimum == maximum:
+            return f"{minimum}%"
+        return f"{minimum}–{maximum}%"
+    score = student.get("score_percent")
+    return "" if score is None else f"{score}%"
 
 
 def evidence_item_description(item: dict[str, Any]) -> str:
@@ -266,11 +283,11 @@ def report_strategy_label(metadata: dict[str, Any], results: list[dict[str, Any]
 
 
 def report_strategy_question(metadata: dict[str, Any], results: list[dict[str, Any]]) -> str:
-    return "Did the student attain enough known KPI/evidence items to reach the outcome threshold?"
+    return "Is attainment certain, non-attainment certain, or is the result still indeterminate because of Unknown evidence?"
 
 
 def report_strategy_formula(metadata: dict[str, Any], results: list[dict[str, Any]]) -> str:
-    return "count(Attains) / count(Attains + Does Not Meet)"
+    return "Attains if the threshold is already reached; Does Not Meet if the threshold cannot be reached; otherwise Unknown."
 
 
 def category_symbol(category_key: Any) -> str:

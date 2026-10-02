@@ -732,13 +732,16 @@ def calculate_student(
             detail["category_key"] = "unknown"
             detail["category"] = "Unknown"
         details.append(detail)
-    score, category_key = classify_student_result(details, meets)
+    minimum_score, maximum_score, category_key = classify_student_result(details, meets)
     category = label_for_category(category_key)
+    score = minimum_score if minimum_score == maximum_score else None
 
     return {
         "student_id": student_id,
         "student_name": student_name,
         "score_percent": score,
+        "attainment_min_percent": minimum_score,
+        "attainment_max_percent": maximum_score,
         "category": category,
         "category_key": category_key,
         "strategy": attainment_strategy(strategy_config),
@@ -749,14 +752,26 @@ def calculate_student(
 def classify_student_result(
     details: list[dict[str, Any]],
     meets: float,
-) -> tuple[float | None, str]:
-    known_details = [detail for detail in details if detail.get("included")]
-    if not known_details:
-        return None, "unknown"
+) -> tuple[float | None, float | None, str]:
+    if not details:
+        return None, None, "unknown"
 
-    met_count = sum(1 for detail in known_details if detail.get("category_key") == "meets")
-    kpi_percent = round((met_count / len(known_details)) * 100, 1)
-    return kpi_percent, "meets" if kpi_percent >= meets else "does_not_meet"
+    # Match the original CanvasOre KPI rollup. The lower bound assumes every
+    # Unknown item does not attain; the upper bound assumes every Unknown item
+    # attains. Classify only when both possibilities lead to the same result.
+    met_count = sum(1 for detail in details if detail.get("category_key") == "meets")
+    unknown_count = sum(1 for detail in details if detail.get("category_key") == "unknown")
+    minimum_ratio = (met_count / len(details)) * 100
+    maximum_ratio = ((met_count + unknown_count) / len(details)) * 100
+    minimum_percent = round(minimum_ratio, 1)
+    maximum_percent = round(maximum_ratio, 1)
+    if minimum_ratio >= meets:
+        category_key = "meets"
+    elif maximum_ratio < meets:
+        category_key = "does_not_meet"
+    else:
+        category_key = "unknown"
+    return minimum_percent, maximum_percent, category_key
 
 
 def calculate_criterion(criterion: dict[str, Any], submission: dict[str, Any] | None) -> dict[str, Any]:

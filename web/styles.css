@@ -71,6 +71,43 @@ details > summary {
   min-height: 22px;
 }
 
+.mapping-import-summary {
+  margin: 12px 0 18px;
+  padding: 12px 14px;
+  border: 1px solid;
+  border-radius: 8px;
+}
+
+.mapping-import-summary.success {
+  color: #166534;
+  border-color: #86c99a;
+  background: #edf9f0;
+}
+
+.mapping-import-summary.warning {
+  color: #713f12;
+  border-color: #e7c66b;
+  background: #fff8df;
+}
+
+.mapping-import-summary p {
+  margin-top: 6px;
+  color: inherit;
+}
+
+.mapping-import-summary details {
+  margin-top: 6px;
+}
+
+.mapping-import-list h3 {
+  margin: 12px 0 4px;
+}
+
+.mapping-import-list ul {
+  margin: 4px 0 8px;
+  padding-left: 22px;
+}
+
 .hidden {
   display: none;
 }

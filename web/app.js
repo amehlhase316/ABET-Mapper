@@ -5,6 +5,7 @@ const coursePanel = document.querySelector("#coursePanel");
 const mappingPanel = document.querySelector("#mappingPanel");
 const selectedCourseLabel = document.querySelector("#selectedCourse");
 const mappingStatus = document.querySelector("#mappingStatus");
+const mappingImportSummary = document.querySelector("#mappingImportSummary");
 const outcomesContainer = document.querySelector("#outcomes");
 const resultsContainer = document.querySelector("#results");
 const exportReportButton = document.querySelector("#exportReportButton");
@@ -122,6 +123,7 @@ async function selectCourse(course) {
   selectedCourseLabel.textContent = `${course.name} (${course.id})`;
   mappingPanel.classList.remove("hidden");
   mappingStatus.textContent = "Loading assessments and rubrics from Canvas...";
+  clearMappingImportSummary();
   resultsContainer.innerHTML = "";
   updateExportState();
   renderOutcomes();
@@ -138,6 +140,7 @@ function resetMapping() {
   selectedCourseLabel.textContent = "No course selected.";
   outcomesContainer.innerHTML = "";
   resultsContainer.innerHTML = "";
+  clearMappingImportSummary();
   updateExportState();
 }
 
@@ -198,7 +201,9 @@ document.querySelector("#mappingFile")?.addEventListener("change", async (event)
     updateExportState();
     renderOutcomes();
     mappingStatus.textContent = importSummaryText(importResult, file.name);
+    renderMappingImportSummary(importResult, file.name);
   } catch (error) {
+    clearMappingImportSummary();
     mappingStatus.textContent = `Mapping import failed: ${error.message}`;
   }
 });
@@ -698,10 +703,54 @@ function mappingItemsForOutcome(mappedOutcome) {
 function importSummaryText(result, fileName) {
   const { matched, missing, ambiguous } = result.summary;
   const parts = [`Loaded ${result.outcomes.length} outcome(s) from ${fileName}.`, `Matched ${matched} item(s).`];
-  if (missing.length) parts.push(`Missing: ${missing.slice(0, 3).join("; ")}${missing.length > 3 ? `; +${missing.length - 3} more` : ""}.`);
-  if (ambiguous.length) parts.push(`Ambiguous: ${ambiguous.slice(0, 3).join("; ")}${ambiguous.length > 3 ? `; +${ambiguous.length - 3} more` : ""}.`);
+  const unresolved = missing.length + ambiguous.length;
+  if (unresolved) parts.push(`${unresolved} item(s) need review below.`);
+  else parts.push("All saved evidence items were matched.");
   if (!matched) parts.push(`Loaded assessment names include: ${availableAssignmentNames().slice(0, 5).join("; ") || "none"}.`);
   return parts.join(" ");
+}
+
+function clearMappingImportSummary() {
+  if (!mappingImportSummary) return;
+  mappingImportSummary.innerHTML = "";
+  mappingImportSummary.className = "mapping-import-summary hidden";
+}
+
+function renderMappingImportSummary(result, fileName) {
+  if (!mappingImportSummary) return;
+  const { matched, missing, ambiguous } = result.summary;
+  const unresolved = missing.length + ambiguous.length;
+  mappingImportSummary.className = `mapping-import-summary ${unresolved ? "warning" : "success"}`;
+
+  if (!unresolved) {
+    mappingImportSummary.innerHTML = `
+      <strong>All saved evidence items were matched successfully.</strong>
+      <p>${matched} item(s) from ${escapeHtml(fileName)} are ready to use.</p>
+    `;
+    return;
+  }
+
+  const sections = [];
+  if (missing.length) {
+    sections.push(`
+      <h3>Not found (${missing.length})</h3>
+      <ul>${missing.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+    `);
+  }
+  if (ambiguous.length) {
+    sections.push(`
+      <h3>Multiple possible matches (${ambiguous.length})</h3>
+      <ul>${ambiguous.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+    `);
+  }
+  mappingImportSummary.innerHTML = `
+    <strong>${unresolved} saved evidence item(s) could not be matched automatically.</strong>
+    <p>${matched} item(s) matched. Items listed below were not selected and should be reviewed.</p>
+    <details>
+      <summary>Open the complete unmatched-item list (${unresolved})</summary>
+      <div class="mapping-import-list">${sections.join("")}</div>
+    </details>
+  `;
 }
 
 function findAssignmentByName(name) {
@@ -850,7 +899,7 @@ function criterionOverviewTable(criteria, defaultMeetsThreshold) {
 function createStudentResultRow(student) {
   const row = document.createElement("details");
   row.className = "student-row";
-  const score = student.score_percent === null ? "n/a" : `${student.score_percent}%`;
+  const score = studentAttainmentValue(student);
   row.innerHTML = `
     <summary>
       <span class="badge ${student.category_key}">${student.category}</span>
@@ -882,6 +931,17 @@ function createStudentResultRow(student) {
     </table>
   `;
   return row;
+}
+
+function studentAttainmentValue(student) {
+  const minimum = student.attainment_min_percent;
+  const maximum = student.attainment_max_percent;
+  if (minimum !== null && minimum !== undefined && maximum !== null && maximum !== undefined) {
+    return Number(minimum) === Number(maximum) ? `${minimum}%` : `${minimum}–${maximum}%`;
+  }
+  return student.score_percent === null || student.score_percent === undefined
+    ? "n/a"
+    : `${student.score_percent}%`;
 }
 
 function escapeHtml(value) {

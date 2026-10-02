@@ -85,8 +85,10 @@ def methodology_rows(course: dict[str, Any], outcomes: list[dict[str, Any]], res
         ["Program Target", f"{PROGRAM_ATTAINMENT_TARGET}% overall attainment"],
         ["Student Data", "Anonymized as S1, S2, S3, etc. Student names are not included in this workbook."],
         ["Attainment Method"],
-        ["Calculation Summary", "Each selected Canvas evidence item counts as one KPI. Evidence can be a whole assessment score or a rubric criterion."],
-        ["Item Attainment", "Each evidence item is classified as Attains, Does Not Meet, or Unknown. An item uses its own Attains threshold when specified; otherwise it uses the outcome threshold."],
+        ["Calculation Summary", "Each selected Canvas evidence item counts as one KPI. Evidence can be a whole assessment score, a rubric criterion, or an entire assignment group evaluated from whole-assessment scores."],
+        ["Entire Assignment Groups", "When an entire Canvas assignment group is selected, all assessments in that group are combined by points into one KPI. Rubric criteria are not used. Canvas drop-lowest and drop-highest rules are applied when present."],
+        ["Missing Work Within a Group", "For an unknown assessment in a selected assignment group, the minimum assumes zero points and the maximum assumes full points. The group is classified only when both possibilities lead to the same attainment decision; otherwise the group KPI is Unknown."],
+        ["Item Attainment", "Each evidence item is classified as Exceeds, Meets, Does Not Meet, or Unknown. Exceeds and Meets both count as Attains. An item uses its own Meets threshold when specified; otherwise it uses the outcome threshold."],
         ["Thresholds", "Attains thresholds are inclusive, so a score equal to the threshold is counted as Attains. Instructors may lower an individual evidence item's threshold when appropriate."],
         ["Evidence Status Rules"],
         ["Missing or Excused", "When an assessment has no points and Canvas marks it Missing or Excused, including through a late-policy status, the evidence is Unknown."],
@@ -158,8 +160,11 @@ def evidence_overview_rows(outcomes: list[dict[str, Any]], results: list[dict[st
                 [
                     "Assessment",
                     "Evidence Item",
-                    "Attains Threshold",
-                    "Attains",
+                    "Meets Threshold",
+                    "Exceeds Threshold",
+                    "Attains (Exceeds + Meets)",
+                    "Exceeds",
+                    "Meets",
                     "Does Not Meet",
                     "Unknown",
                 ],
@@ -171,8 +176,11 @@ def evidence_overview_rows(outcomes: list[dict[str, Any]], results: list[dict[st
                     item.get("assignment_name") or "",
                     evidence_item_description(item),
                     item.get("meets_threshold") or result.get("meets_threshold"),
+                    item.get("exceeds_threshold") or 90,
+                    item_attained_count_percent(item),
+                    item_count_percent(item, "exceeds"),
                     item_count_percent(item, "meets"),
-                    item_count_percent(item, "does_not_meet"),
+                    item_count_percent(item, "insufficient"),
                     item_count_percent(item, "unknown"),
                 ]
             )
@@ -187,7 +195,7 @@ def outcome_detail_rows(result: dict[str, Any]) -> list[list[Any]]:
         ["Overall Attained", attained_text(result)],
         [],
         ["Evidence Summary"],
-        ["Assessment", "Evidence Item", "Attains Threshold", "Attains", "Does Not Meet", "Unknown"],
+        ["Assessment", "Evidence Item", "Meets Threshold", "Exceeds Threshold", "Attains (Exceeds + Meets)", "Exceeds", "Meets", "Does Not Meet", "Unknown"],
     ]
     for item in result.get("criterion_stats") or []:
         rows.append(
@@ -195,18 +203,21 @@ def outcome_detail_rows(result: dict[str, Any]) -> list[list[Any]]:
                 item.get("assignment_name") or "",
                 evidence_item_description(item),
                 item.get("meets_threshold") or result.get("meets_threshold"),
+                item.get("exceeds_threshold") or 90,
+                item_attained_count_percent(item),
+                item_count_percent(item, "exceeds"),
                 item_count_percent(item, "meets"),
-                item_count_percent(item, "does_not_meet"),
+                item_count_percent(item, "insufficient"),
                 item_count_percent(item, "unknown"),
             ]
         )
 
     criteria = result.get("criterion_stats") or []
     rows.extend([[], ["Anonymized Student Evidence"]])
-    rows.append(["Student", "KPI Attainment", "Category"] + [evidence_item_description(criterion) for criterion in criteria])
+    rows.append(["Student", "KPI Attainment", "Outcome Result"] + [evidence_item_description(criterion) for criterion in criteria])
     for index, student in enumerate(result.get("students") or [], start=1):
         detail_by_key = {
-            str(detail.get("criterion_id") or f"{detail.get('assignment_id')}:assignment-score"): detail
+            str(detail.get("criterion_key") or detail.get("criterion_id") or f"{detail.get('assignment_id')}:assignment-score"): detail
             for detail in student.get("details") or []
         }
         rows.append(
@@ -224,10 +235,10 @@ def student_detail_value(detail: dict[str, Any] | None) -> str:
     if not detail:
         return ""
     if not detail.get("included"):
-        return "X"
+        return "Unknown"
     if detail.get("score_percent") is None:
         return ""
-    return f"{detail.get('score_percent')}% ({category_symbol(detail.get('category_key'))})"
+    return f"{detail.get('score_percent')}% ({label_for_evidence_category(detail.get('category_key'))})"
 
 
 def student_attainment_value(student: dict[str, Any]) -> str:
@@ -267,6 +278,13 @@ def item_count_percent(item: dict[str, Any], key: str) -> str:
     return f"{item.get('counts', {}).get(key, 0)} ({item.get('percentages', {}).get(key, 0)}%)"
 
 
+def item_attained_count_percent(item: dict[str, Any]) -> str:
+    counts = item.get("counts", {})
+    percentages = item.get("percentages", {})
+    count = int(counts.get("exceeds", 0) or 0) + int(counts.get("meets", 0) or 0)
+    return f"{count} ({percentages.get('attained', 0)}%)"
+
+
 def student_category_label(student: dict[str, Any]) -> str:
     key = student.get("category_key")
     if key == "meets":
@@ -275,7 +293,7 @@ def student_category_label(student: dict[str, Any]) -> str:
 
 
 def attained_text(result: dict[str, Any]) -> str:
-    return f"{result.get('overall_attained_count', 0)}/{result.get('overall_known_count', 0)} ({result.get('overall_attained_percent', 0)}%)"
+    return f"{result.get('overall_attained_percent', 0)}% ({result.get('overall_attained_count', 0)}/{result.get('overall_known_count', 0)})"
 
 
 def report_strategy_label(metadata: dict[str, Any], results: list[dict[str, Any]]) -> str:
@@ -292,10 +310,20 @@ def report_strategy_formula(metadata: dict[str, Any], results: list[dict[str, An
 
 def category_symbol(category_key: Any) -> str:
     return {
-        "meets": "A",
-        "does_not_meet": "D",
+        "exceeds": "E",
+        "meets": "M",
+        "insufficient": "D",
         "unknown": "X",
     }.get(str(category_key or ""), "")
+
+
+def label_for_evidence_category(category_key: Any) -> str:
+    return {
+        "exceeds": "Exceeds",
+        "meets": "Meets",
+        "insufficient": "Does Not Meet",
+        "unknown": "Unknown",
+    }.get(str(category_key or ""), "Unknown")
 
 
 def normal_outcome_name(value: str) -> str:
@@ -339,13 +367,16 @@ main {{ max-width: 1180px; margin: 0 auto; padding: 28px; }}
 .report-section, .detail-section {{ margin: 0 0 24px; padding: 22px; border: 1px solid #d9e2ec; border-radius: 10px; background: white; box-shadow: 0 2px 8px rgba(31, 95, 139, .06); }}
 h1 {{ margin: 0 0 20px; color: #1f5f8b; font-size: 30px; }}
 h2 {{ margin: 24px 0 10px; color: #1f5f8b; font-size: 20px; }}
-h2.outcome-heading {{ margin: 30px -22px 12px; padding: 14px 22px; color: white; background: #1f5f8b; font-size: 23px; }}
+h2.outcome-heading {{ margin: 34px -22px 14px; padding: 18px 22px; color: white; background: #8c1d40; font-size: 30px; letter-spacing: .2px; }}
 table {{ width: 100%; margin: 0 0 16px; border-collapse: collapse; }}
 th, td {{ padding: 9px 10px; border: 1px solid #d9e2ec; text-align: left; vertical-align: top; }}
 th {{ color: white; background: #1f5f8b; }}
 tr.outcome-summary th {{ color: #1f2933; background: #eaf4fb; }}
 td.label {{ width: 205px; font-weight: 700; background: #eaf4fb; }}
 .attains {{ background: #d9ead3; }}
+.exceeds {{ background: #c6e8bd; }}
+.meets {{ background: #eaf4df; }}
+.insufficient {{ background: #f4cccc; }}
 .does-not-meet {{ background: #f4cccc; }}
 .unknown {{ background: #d9d9d9; }}
 .detail-section > summary {{ cursor: pointer; color: #1f5f8b; font-size: 20px; font-weight: 700; }}
@@ -396,21 +427,43 @@ def rows_html(rows: list[list[Any]], section_name: str) -> str:
             category_class = html_category_class(text, header)
             if category_class:
                 classes.append(category_class)
+            if is_outcome_block_header(row) and column_index == 4:
+                classes.append("attains" if outcome_attainment_is_ok(text) else "does-not-meet")
+            if len(row) == 2 and str(row[0] or "") == "Overall Attained" and column_index == 1:
+                classes.append("attains" if outcome_attainment_is_ok(text) else "does-not-meet")
             class_attr = f' class="{" ".join(classes)}"' if classes else ""
-            cells.append(f"<{tag}{class_attr}>{xml_escape(text)}</{tag}>")
+            content = attainment_html(text) if is_overall_attainment_cell(row, column_index) else xml_escape(text)
+            cells.append(f"<{tag}{class_attr}>{content}</{tag}>")
         table_rows.append(f"<tr{row_class}>{''.join(cells)}</tr>")
     flush_table()
     return "".join(rendered)
 
 
 def html_category_class(text: str, header: str) -> str:
-    if header in {"Attains", "Overall Attained"} or text == "Attains" or text.endswith("(A)"):
+    if header in {"Attains", "Attains (Exceeds + Meets)", "Overall Attained"} or text == "Attains":
         return "attains"
-    if header == "Does Not Meet" or text == "Does Not Meet" or text.endswith("(D)"):
-        return "does-not-meet"
-    if header == "Unknown" or text in {"Unknown", "X"}:
+    if header == "Exceeds" or text == "Exceeds" or text.endswith("(Exceeds)"):
+        return "exceeds"
+    if header == "Meets" or text == "Meets" or text.endswith("(Meets)"):
+        return "meets"
+    if header == "Does Not Meet" or text == "Does Not Meet" or text.endswith("(Does Not Meet)"):
+        return "insufficient"
+    if header == "Unknown" or text == "Unknown":
         return "unknown"
     return ""
+
+
+def is_overall_attainment_cell(row: list[Any], column_index: int) -> bool:
+    return (is_outcome_block_header(row) and column_index == 4) or (
+        len(row) == 2 and str(row[0] or "") == "Overall Attained" and column_index == 1
+    )
+
+
+def attainment_html(text: str) -> str:
+    match = re.fullmatch(r"([\d.]+%)(\s+\([^)]*\))", text)
+    if not match:
+        return xml_escape(text)
+    return f'<strong>{xml_escape(match.group(1))}</strong> <span class="muted">{xml_escape(match.group(2).strip())}</span>'
 
 
 def write_static_workbook_files(archive: ZipFile, sheets: list[tuple[str, list[list[Any]]]]) -> None:
@@ -469,15 +522,16 @@ def workbook_xml(sheet_names: list[str]) -> str:
 def styles_xml() -> str:
     return '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<fonts count="6">
+<fonts count="7">
 <font><sz val="11"/><color rgb="FF1F2933"/><name val="Calibri"/></font>
 <font><b/><sz val="20"/><color rgb="FF1F5F8B"/><name val="Calibri"/></font>
 <font><b/><sz val="12"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>
 <font><b/><sz val="11"/><color rgb="FF1F2933"/><name val="Calibri"/></font>
 <font><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>
-<font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>
+<font><b/><sz val="22"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>
+<font><b/><sz val="15"/><color rgb="FF1F2933"/><name val="Calibri"/></font>
 </fonts>
-<fills count="8">
+<fills count="10">
 <fill><patternFill patternType="none"/></fill>
 <fill><patternFill patternType="gray125"/></fill>
 <fill><patternFill patternType="solid"><fgColor rgb="FF1F5F8B"/><bgColor indexed="64"/></patternFill></fill>
@@ -486,6 +540,8 @@ def styles_xml() -> str:
 <fill><patternFill patternType="solid"><fgColor rgb="FFFFF2CC"/><bgColor indexed="64"/></patternFill></fill>
 <fill><patternFill patternType="solid"><fgColor rgb="FFF4CCCC"/><bgColor indexed="64"/></patternFill></fill>
 <fill><patternFill patternType="solid"><fgColor rgb="FFD9D9D9"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFC6E8BD"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FF8C1D40"/><bgColor indexed="64"/></patternFill></fill>
 </fills>
 <borders count="3">
 <border><left/><right/><top/><bottom/><diagonal/></border>
@@ -493,7 +549,7 @@ def styles_xml() -> str:
 <border><bottom style="medium"><color rgb="FF1F5F8B"/></bottom></border>
 </borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="11">
+<cellXfs count="15">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>
 <xf numFmtId="0" fontId="1" fillId="0" borderId="2" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
 <xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
@@ -504,7 +560,11 @@ def styles_xml() -> str:
 <xf numFmtId="0" fontId="3" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
 <xf numFmtId="0" fontId="3" fillId="6" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
 <xf numFmtId="0" fontId="3" fillId="7" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
-<xf numFmtId="0" fontId="5" fillId="2" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="0" fontId="5" fillId="9" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="0" fontId="3" fillId="8" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+<xf numFmtId="0" fontId="3" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+<xf numFmtId="0" fontId="6" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+<xf numFmtId="0" fontId="6" fillId="6" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
 </cellXfs>
 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>'''
@@ -514,6 +574,7 @@ def sheet_xml(rows: list[list[Any]]) -> str:
     rendered_rows = []
     merged_cells = []
     active_header: list[Any] = []
+    column_count = max((len(row) for row in rows), default=1)
     for row_index, row in enumerate(rows, start=1):
         if is_table_header(row):
             active_header = row
@@ -524,8 +585,7 @@ def sheet_xml(rows: list[list[Any]]) -> str:
         height = row_height(row)
         rendered_rows.append(f'<row r="{row_index}"{height}>{cells}</row>')
         if is_evidence_outcome_heading(row):
-            merged_cells.append(f'<mergeCell ref="A{row_index}:G{row_index}"/>')
-    column_count = max((len(row) for row in rows), default=1)
+            merged_cells.append(f'<mergeCell ref="A{row_index}:{column_name(column_count)}{row_index}"/>')
     merges = f'<mergeCells count="{len(merged_cells)}">{"".join(merged_cells)}</mergeCells>' if merged_cells else ""
     return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
@@ -554,10 +614,10 @@ def cell_style(row: list[Any], row_index: int, column_index: int, value: Any, ac
         return 10
     if is_outcome_block_header(row):
         if column_index == 5:
-            return 6 if outcome_attainment_is_ok(text) else 8
+            return 13 if outcome_attainment_is_ok(text) else 14
         if text in {"Attains", "Does Not Meet", "Unknown"}:
             return 2
-        if column_index in {7, 9, 11}:
+        if column_index in {7, 9, 11, 13, 15}:
             return category_column_style(str(row[column_index - 2] or ""))
         return 3
     if is_table_header(row):
@@ -565,12 +625,18 @@ def cell_style(row: list[Any], row_index: int, column_index: int, value: Any, ac
     if len(row) == 1 and first:
         return 5
     header = str(active_header[column_index - 1] or "") if column_index <= len(active_header) else ""
-    if header == "Category":
+    if header == "Outcome Result":
         return category_style(text)
+    if first == "Overall Attained" and column_index == 2:
+        return 13 if outcome_attainment_is_ok(text) else 14
     if header == "Overall Attained" and outcome_attainment_percent(text) is not None:
         return 7 if outcome_attainment_is_ok(text) else 8
-    if header in {"Attains", "Overall Attained"}:
+    if header in {"Attains", "Attains (Exceeds + Meets)", "Overall Attained"}:
         return 7
+    if header == "Exceeds":
+        return 11
+    if header == "Meets":
+        return 12
     if header == "Does Not Meet":
         return 8
     if header == "Unknown":
@@ -599,7 +665,7 @@ def outcome_attainment_is_ok(value: str) -> bool:
 
 
 def outcome_attainment_percent(value: str) -> float | None:
-    match = re.search(r"\(([\d.]+)%\)", value)
+    match = re.search(r"^([\d.]+)%", value) or re.search(r"\(([\d.]+)%\)", value)
     if not match:
         return None
     return float(match.group(1))
@@ -608,17 +674,29 @@ def outcome_attainment_percent(value: str) -> float | None:
 def category_column_style(label: str) -> int:
     return {
         "Attains": 7,
+        "Attains (Exceeds + Meets)": 7,
+        "Exceeds": 11,
+        "Meets": 12,
         "Does Not Meet": 8,
         "Unknown": 9,
     }.get(label, 4)
 
 
 def category_style(text: str) -> int:
-    if text == "Attains" or text.startswith("Attains ") or "Attains:" in text or text.endswith("(A)"):
+    if text == "Attains" or text.startswith("Attains ") or "Attains:" in text:
         return 7
-    if text in {"Does Not Meet", "Not Attained"} or text.startswith("Does Not Meet ") or "Does Not Meet:" in text or text.endswith("(D)"):
+    if text == "Exceeds" or text.endswith("(Exceeds)"):
+        return 11
+    if text == "Meets" or text.endswith("(Meets)"):
+        return 12
+    if (
+        text in {"Does Not Meet", "Not Attained"}
+        or text.startswith("Does Not Meet ")
+        or "Does Not Meet:" in text
+        or text.endswith("(Does Not Meet)")
+    ):
         return 8
-    if text in {"Unknown", "X"} or text.startswith("Unknown ") or "Unknown:" in text:
+    if text == "Unknown" or text.startswith("Unknown ") or "Unknown:" in text:
         return 9
     return 0
 
@@ -636,7 +714,7 @@ def row_height(row: list[Any]) -> str:
     if not row:
         return ""
     if is_evidence_outcome_heading(row):
-        return ' ht="30" customHeight="1"'
+        return ' ht="42" customHeight="1"'
     longest = max((len(str(value or "")) for value in row), default=0)
     if len(row) == 1 and longest > 40:
         return ' ht="34" customHeight="1"'
@@ -648,7 +726,7 @@ def row_height(row: list[Any]) -> str:
 
 
 def column_widths_xml(column_count: int) -> str:
-    widths = [22, 34, 46, 18, 20, 18, 18, 18, 18, 18, 18, 18, 18]
+    widths = [22, 34, 46, 18, 20, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18]
     columns = []
     for index in range(1, column_count + 1):
         width = widths[index - 1] if index <= len(widths) else 14

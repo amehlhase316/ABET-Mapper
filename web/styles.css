@@ -303,6 +303,14 @@ th {
   border-bottom: 1px solid #edf2f7;
 }
 
+.assignment-group-check {
+  margin-bottom: 4px;
+  padding: 10px;
+  border: 1px solid #9fb3c8;
+  border-radius: 6px;
+  background: #f0f6fb;
+}
+
 .outcome-item {
   display: flex;
   align-items: center;
@@ -394,8 +402,19 @@ th {
   background: #f8fafc;
 }
 
-.overall-attained strong {
-  font-size: 20px;
+.overall-attained.attained {
+  border-left-color: #2e7d32;
+  background: #eaf6ec;
+}
+
+.overall-attained.not-attained {
+  border-left-color: #b42318;
+  background: #fdecec;
+}
+
+.overall-attained-percent {
+  margin-left: 8px;
+  font-size: 22px;
 }
 
 h3 {
@@ -443,14 +462,15 @@ h3 {
 }
 
 .exceeds {
-  background: #d9f99d;
+  background: #c6e8bd;
 }
 
 .meets {
-  background: #dbeafe;
+  background: #dff0d8;
 }
 
-.does_not_meet {
+.does_not_meet,
+.insufficient {
   background: #fee2e2;
 }
 

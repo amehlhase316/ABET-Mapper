@@ -719,21 +719,32 @@ def calculate_student(
     details = []
     student_name = ""
     for criterion in criteria:
-        assignment_id = str(criterion.get("assignment_id") or "")
-        submission = submissions_index.get(assignment_id, {}).get(student_id)
-        if submission:
-            student_name = student_name or submission.get("user_name") or ""
-        detail = calculate_criterion(criterion, submission)
+        if criterion.get("source") == "assignment_group":
+            group_submissions = {
+                str(assignment.get("id") or ""): submissions_index.get(str(assignment.get("id") or ""), {}).get(student_id)
+                for assignment in criterion.get("assignments") or []
+            }
+            for submission in group_submissions.values():
+                if submission:
+                    student_name = student_name or submission.get("user_name") or ""
+            detail = calculate_assignment_group_criterion(criterion, group_submissions)
+        else:
+            assignment_id = str(criterion.get("assignment_id") or "")
+            submission = submissions_index.get(assignment_id, {}).get(student_id)
+            if submission:
+                student_name = student_name or submission.get("user_name") or ""
+            detail = calculate_criterion(criterion, submission)
         if detail["included"]:
             item_meets = number_or_default(criterion.get("meets_threshold"), meets)
-            detail["category_key"] = category_key_for_score(detail["score_percent"], item_meets)
+            item_exceeds = number_or_default(criterion.get("exceeds_threshold"), 90)
+            detail["category_key"] = category_key_for_score(detail["score_percent"], item_meets, item_exceeds)
             detail["category"] = label_for_category(detail["category_key"])
         else:
             detail["category_key"] = "unknown"
             detail["category"] = "Unknown"
         details.append(detail)
     minimum_score, maximum_score, category_key = classify_student_result(details, meets)
-    category = label_for_category(category_key)
+    category = label_for_student_category(category_key)
     score = minimum_score if minimum_score == maximum_score else None
 
     return {
@@ -759,7 +770,7 @@ def classify_student_result(
     # Match the original CanvasOre KPI rollup. The lower bound assumes every
     # Unknown item does not attain; the upper bound assumes every Unknown item
     # attains. Classify only when both possibilities lead to the same result.
-    met_count = sum(1 for detail in details if detail.get("category_key") == "meets")
+    met_count = sum(1 for detail in details if detail.get("category_key") in {"exceeds", "meets"})
     unknown_count = sum(1 for detail in details if detail.get("category_key") == "unknown")
     minimum_ratio = (met_count / len(details)) * 100
     maximum_ratio = ((met_count + unknown_count) / len(details)) * 100
@@ -776,11 +787,16 @@ def classify_student_result(
 
 def calculate_criterion(criterion: dict[str, Any], submission: dict[str, Any] | None) -> dict[str, Any]:
     base = {
+        "criterion_key": criterion.get("id"),
+        "source": criterion.get("source") or ("rubric" if criterion.get("criterion_id") else "assignment"),
         "assignment_id": criterion.get("assignment_id"),
+        "assignment_group_id": criterion.get("assignment_group_id"),
+        "assignment_group_name": criterion.get("assignment_group_name") or "",
         "assignment_name": criterion.get("assignment_name") or "",
         "criterion_id": criterion.get("criterion_id"),
         "description": criterion.get("description") or "",
         "meets_threshold": criterion.get("meets_threshold"),
+        "exceeds_threshold": criterion.get("exceeds_threshold"),
     }
     if not submission:
         return base | {"included": False, "reason": "No submission record", "score_percent": None}
@@ -823,6 +839,106 @@ def calculate_criterion(criterion: dict[str, Any], submission: dict[str, Any] | 
         "points_earned": assignment_score,
         "points_possible": points,
     }
+
+
+def calculate_assignment_group_criterion(
+    criterion: dict[str, Any],
+    submissions: dict[str, dict[str, Any] | None],
+) -> dict[str, Any]:
+    """Combine whole-assessment scores in one Canvas assignment group KPI."""
+    base = {
+        "criterion_key": criterion.get("id") or f"group:{criterion.get('assignment_group_id')}:assignment-group",
+        "source": "assignment_group",
+        "assignment_id": None,
+        "assignment_group_id": criterion.get("assignment_group_id"),
+        "assignment_group_name": criterion.get("assignment_group_name") or criterion.get("assignment_name") or "",
+        "assignment_name": criterion.get("assignment_group_name") or criterion.get("assignment_name") or "",
+        "criterion_id": None,
+        "description": criterion.get("description") or "Entire assignment group",
+        "meets_threshold": criterion.get("meets_threshold"),
+        "exceeds_threshold": criterion.get("exceeds_threshold"),
+    }
+    minimum_points: list[float] = []
+    maximum_points: list[float] = []
+    possible_points: list[float] = []
+    unknown_count = 0
+    component_count = 0
+
+    for assignment in criterion.get("assignments") or []:
+        assignment_id = str(assignment.get("id") or "")
+        points = number_or_none(assignment.get("points"))
+        if points is None:
+            return base | {
+                "included": False,
+                "reason": f"Points unavailable for {assignment.get('name') or 'an assessment'}",
+                "score_percent": None,
+            }
+        component_count += 1
+        possible_points.append(points)
+        child = {
+            "id": f"{assignment_id}:assignment-score",
+            "source": "assignment",
+            "assignment_id": assignment_id,
+            "assignment_name": assignment.get("name") or "",
+            "criterion_id": None,
+            "description": "Whole assessment score",
+            "points": points,
+        }
+        detail = calculate_criterion(child, submissions.get(assignment_id))
+        if detail.get("included"):
+            earned = number_or_none(detail.get("points_earned")) or 0.0
+            minimum_points.append(earned)
+            maximum_points.append(earned)
+        else:
+            unknown_count += 1
+            minimum_points.append(0.0)
+            maximum_points.append(points)
+
+    if not component_count:
+        return base | {"included": False, "reason": "Assignment group has no assessments", "score_percent": None}
+
+    rules = criterion.get("rules") or {}
+    drop_lowest = nonnegative_int(rules.get("drop_lowest"))
+    drop_highest = nonnegative_int(rules.get("drop_highest"))
+    denominator = canvasore_trimmed_sum(possible_points, drop_lowest, drop_highest)
+    if denominator <= 0:
+        return base | {"included": False, "reason": "Assignment group has no available points", "score_percent": None}
+
+    minimum_earned = canvasore_trimmed_sum(minimum_points, drop_lowest, drop_highest)
+    maximum_earned = canvasore_trimmed_sum(maximum_points, drop_lowest, drop_highest)
+    minimum_percent = round((minimum_earned / denominator) * 100, 1)
+    maximum_percent = round((maximum_earned / denominator) * 100, 1)
+    meets = number_or_default(criterion.get("meets_threshold"), 70)
+    common = base | {
+        "points_earned": round(minimum_earned, 3),
+        "points_possible": round(denominator, 3),
+        "attainment_min_percent": minimum_percent,
+        "attainment_max_percent": maximum_percent,
+        "component_count": component_count,
+        "unknown_component_count": unknown_count,
+        "drop_lowest": drop_lowest,
+        "drop_highest": drop_highest,
+    }
+    if minimum_percent >= meets or maximum_percent < meets:
+        return common | {"included": True, "reason": "", "score_percent": minimum_percent}
+    return common | {
+        "included": False,
+        "reason": "Missing assessment results could change the assignment-group classification",
+        "score_percent": None,
+    }
+
+
+def nonnegative_int(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def canvasore_trimmed_sum(values: list[float], drop_lowest: int, drop_highest: int) -> float:
+    ordered = sorted(values)
+    end = max(drop_lowest, len(ordered) - drop_highest)
+    return sum(ordered[drop_lowest:end])
 
 
 def rubric_score_for(rubric_assessment: dict[str, Any], criterion_id: str) -> float | None:
@@ -874,40 +990,55 @@ def calculate_criterion_stats(student_results: list[dict[str, Any]]) -> list[dic
     stats: dict[str, dict[str, Any]] = {}
     for student in student_results:
         for detail in student.get("details", []):
-            key = str(detail.get("criterion_id") or f"{detail.get('assignment_id')}:assignment-score")
+            key = str(detail.get("criterion_key") or detail.get("criterion_id") or f"{detail.get('assignment_id')}:assignment-score")
             if key not in stats:
                 stats[key] = {
                     "criterion_key": key,
                     "assignment_name": detail.get("assignment_name") or "",
                     "description": detail.get("description") or "",
                     "meets_threshold": detail.get("meets_threshold"),
-                    "counts": {"meets": 0, "does_not_meet": 0, "unknown": 0},
+                    "exceeds_threshold": detail.get("exceeds_threshold"),
+                    "counts": {"exceeds": 0, "meets": 0, "insufficient": 0, "unknown": 0},
                 }
             stats[key]["counts"][detail.get("category_key") or "unknown"] += 1
 
     result = []
     for item in stats.values():
         counts = item["counts"]
-        total_known = counts["meets"] + counts["does_not_meet"]
+        total_known = counts["exceeds"] + counts["meets"] + counts["insufficient"]
+        attained_count = counts["exceeds"] + counts["meets"]
         item["percentages"] = {
+            "exceeds": round((counts["exceeds"] / total_known) * 100, 1) if total_known else 0,
             "meets": round((counts["meets"] / total_known) * 100, 1) if total_known else 0,
-            "does_not_meet": round((counts["does_not_meet"] / total_known) * 100, 1) if total_known else 0,
-            "attained": round((counts["meets"] / total_known) * 100, 1) if total_known else 0,
+            "insufficient": round((counts["insufficient"] / total_known) * 100, 1) if total_known else 0,
+            "attained": round((attained_count / total_known) * 100, 1) if total_known else 0,
             "unknown": round((counts["unknown"] / sum(counts.values())) * 100, 1) if sum(counts.values()) else 0,
         }
         result.append(item)
     return result
 
 
-def category_key_for_score(score: float | None, meets: float) -> str:
+def category_key_for_score(score: float | None, meets: float, exceeds: float = 90) -> str:
     if score is None:
         return "unknown"
+    if score >= exceeds:
+        return "exceeds"
     if score >= meets:
         return "meets"
-    return "does_not_meet"
+    return "insufficient"
 
 
 def label_for_category(category_key: str) -> str:
+    return {
+        "exceeds": "Exceeds",
+        "meets": "Meets",
+        "insufficient": "Does Not Meet",
+        "does_not_meet": "Does Not Meet",
+        "unknown": "Unknown",
+    }.get(category_key, "Unknown")
+
+
+def label_for_student_category(category_key: str) -> str:
     return {
         "meets": "Attains",
         "does_not_meet": "Does Not Meet",

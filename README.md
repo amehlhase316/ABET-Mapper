@@ -77,7 +77,7 @@ To save data somewhere else, set `ABET_MAPPER_DATA_DIR` before starting the appl
 1. Start ABET Mapper and open `http://127.0.0.1:8765`.
 2. Select a Canvas course.
 3. Add the ABET outcomes being assessed.
-4. Select the assessments or rubric criteria used as evidence.
+4. Select individual assessments, rubric criteria, or an entire Canvas assignment group as evidence. An entire group uses whole-assessment scores only and counts as one KPI.
 5. Adjust an Attains threshold when needed.
 6. Calculate attainment.
 7. Export the Excel report, HTML report, or reusable mapping JSON.

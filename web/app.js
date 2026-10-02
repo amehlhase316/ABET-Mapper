@@ -169,6 +169,7 @@ document.querySelector("#outcomeForm").addEventListener("submit", (event) => {
     name,
     description: abetDescriptions[name] || "",
     assignment_ids: [],
+    assignment_group_ids: [],
     evaluation: {
       meets_threshold: 70,
       criteria: [],
@@ -211,7 +212,7 @@ document.querySelector("#mappingFile")?.addEventListener("change", async (event)
 document.querySelector("#calculateButton").addEventListener("click", async () => {
   if (!selectedCourse) return;
   for (const outcome of outcomes) ensureOutcomeCriteria(outcome);
-  const assignmentIds = [...new Set(outcomes.flatMap((outcome) => outcome.assignment_ids))];
+  const assignmentIds = selectedSubmissionAssignmentIds();
   if (assignmentIds.length === 0) {
     mappingStatus.textContent = "Choose at least one assessment for an outcome.";
     return;
@@ -312,9 +313,11 @@ function exportMappingJson() {
         .filter((criterion) => criterion.selected)
         .map((criterion) => ({
           assignment_name: criterion.assignment_name,
+          assignment_group_name: criterion.assignment_group_name,
           source: criterion.source,
           criterion_description: criterion.description,
           meets_threshold: Number(criterion.meets_threshold ?? outcome.evaluation.meets_threshold ?? 70),
+          exceeds_threshold: Number(criterion.exceeds_threshold ?? 90),
         })),
     })),
   };
@@ -355,13 +358,14 @@ function safeFilenamePart(value) {
 
 function createOutcomePanel(outcome) {
   ensureOutcomeCriteria(outcome);
+  const selectionCount = outcome.assignment_ids.length + outcome.assignment_group_ids.length;
   const panel = document.createElement("details");
   panel.className = "outcome-panel";
   panel.dataset.openKey = `outcome:${outcome.id}`;
   panel.open = sectionIsOpen(panel.dataset.openKey, true);
   panel.innerHTML = `
     <summary class="outcome-summary">
-      <span>${escapeHtml(outcome.name)} <span class="muted">${outcome.assignment_ids.length} assessment(s)</span></span>
+      <span>${escapeHtml(outcome.name)} <span class="muted">${selectionCount} assessment selection(s)</span></span>
       <button type="button" class="danger small-button" data-role="delete-outcome">Delete</button>
     </summary>
     <div class="outcome-body">
@@ -370,7 +374,7 @@ function createOutcomePanel(outcome) {
         <summary>
           <span class="summary-line">
             <span>Assessments</span>
-            <span class="muted">${outcome.assignment_ids.length} selected</span>
+            <span class="muted">${selectionCount} selected</span>
           </span>
         </summary>
         <div class="assignment-list">${assignmentSelectionHtml(outcome)}</div>
@@ -403,9 +407,14 @@ function assignmentSelectionHtml(outcome) {
   return assignmentGroups.map((group) => `
     <details data-open-key="assignments:${outcome.id}:${group.id}" ${sectionIsOpen(`assignments:${outcome.id}:${group.id}`, true) ? "open" : ""}>
       <summary>${escapeHtml(group.name)}</summary>
+      <label class="assignment-check assignment-group-check">
+        <input type="checkbox" data-role="assignment-group" data-assignment-group-id="${group.id}" ${outcome.assignment_group_ids.includes(String(group.id)) ? "checked" : ""}>
+        <span>Use the entire group as one KPI</span>
+        <span class="muted">Whole assessment scores only · ${group.assignments.length} assessment(s)</span>
+      </label>
       ${group.assignments.map((assignment) => `
         <label class="assignment-check">
-          <input type="checkbox" data-role="assignment" data-assignment-id="${assignment.id}" ${outcome.assignment_ids.includes(String(assignment.id)) ? "checked" : ""}>
+          <input type="checkbox" data-role="assignment" data-assignment-id="${assignment.id}" ${outcome.assignment_ids.includes(String(assignment.id)) ? "checked" : ""} ${outcome.assignment_group_ids.includes(String(group.id)) ? "disabled" : ""}>
           <span>${escapeHtml(assignment.name)}</span>
           <span class="muted">${assignment.points_possible ?? ""} pts · ${assignment.rubric.length} criteria</span>
         </label>
@@ -415,9 +424,20 @@ function assignmentSelectionHtml(outcome) {
 }
 
 function criteriaHtml(outcome) {
-  if (outcome.assignment_ids.length === 0) return `<div class="muted">Select assessments first.</div>`;
+  if (outcome.assignment_ids.length === 0 && outcome.assignment_group_ids.length === 0) return `<div class="muted">Select assessments first.</div>`;
   if (outcome.evaluation.criteria.length === 0) return `<div class="muted">No criteria or assessment scores available.</div>`;
-  return outcome.assignment_ids.map((assignmentId) => {
+  const groupHtml = outcome.assignment_group_ids.map((groupId) => {
+    const group = findAssignmentGroup(groupId);
+    const item = outcome.evaluation.criteria.find((criterion) => criterion.source === "assignment_group" && criterion.assignment_group_id === String(groupId));
+    if (!group || !item) return "";
+    return `
+      <details class="evaluation-assignment" data-open-key="evaluation-group:${outcome.id}:${groupId}" ${sectionIsOpen(`evaluation-group:${outcome.id}:${groupId}`, true) ? "open" : ""}>
+        <summary>${escapeHtml(group.name)} <span class="muted">Entire group · one KPI</span></summary>
+        ${criterionRowHtml(item)}
+      </details>
+    `;
+  }).join("");
+  const assignmentHtml = outcome.assignment_ids.map((assignmentId) => {
     const assignment = findAssignment(assignmentId);
     const items = outcome.evaluation.criteria.filter((criterion) => criterion.assignment_id === String(assignmentId));
     const whole = items.find((criterion) => criterion.source === "assignment");
@@ -435,6 +455,7 @@ function criteriaHtml(outcome) {
       </details>
     `;
   }).join("");
+  return groupHtml + assignmentHtml;
 }
 
 function criterionRowHtml(criterion) {
@@ -444,7 +465,7 @@ function criterionRowHtml(criterion) {
       <input type="checkbox" data-role="criterion" data-criterion-id="${escapeAttr(criterion.id)}" ${criterion.selected ? "checked" : ""}>
       <div>
         <div>${escapeHtml(criterion.description)}</div>
-        <div class="muted">${criterion.source === "assignment" ? "Whole assessment" : "Rubric criterion"}</div>
+        <div class="muted">${criterion.source === "assignment_group" ? "Entire assignment group · whole assessment scores only" : criterion.source === "assignment" ? "Whole assessment" : "Rubric criterion"}</div>
       </div>
       <span class="muted">${criterion.points ?? ""} pts</span>
       <label>
@@ -478,6 +499,21 @@ function wireOutcomePanel(panel, outcome) {
         outcome.assignment_ids = outcome.assignment_ids.filter((id) => id !== assignmentId);
         outcome.evaluation.criteria = outcome.evaluation.criteria.filter((criterion) => criterion.assignment_id !== assignmentId);
       }
+      markResultsStale();
+      ensureOutcomeCriteria(outcome);
+      renderOutcomes();
+    });
+  });
+  panel.querySelectorAll("[data-role='assignment-group']").forEach((checkbox) => {
+    checkbox.addEventListener("change", () => {
+      const groupId = String(checkbox.dataset.assignmentGroupId);
+      const group = findAssignmentGroup(groupId);
+      if (checkbox.checked && !outcome.assignment_group_ids.includes(groupId)) {
+        outcome.assignment_group_ids.push(groupId);
+        const childIds = new Set((group?.assignments || []).map((assignment) => String(assignment.id)));
+        outcome.assignment_ids = outcome.assignment_ids.filter((id) => !childIds.has(String(id)));
+      }
+      if (!checkbox.checked) outcome.assignment_group_ids = outcome.assignment_group_ids.filter((id) => id !== groupId);
       markResultsStale();
       ensureOutcomeCriteria(outcome);
       renderOutcomes();
@@ -556,8 +592,37 @@ function sectionIsOpen(key, defaultValue) {
 }
 
 function ensureOutcomeCriteria(outcome) {
+  outcome.assignment_group_ids = Array.isArray(outcome.assignment_group_ids) ? outcome.assignment_group_ids.map(String) : [];
   const existing = new Map(outcome.evaluation.criteria.map((criterion) => [criterion.id, criterion]));
   const next = [];
+  for (const groupId of outcome.assignment_group_ids) {
+    const group = findAssignmentGroup(groupId);
+    if (!group) continue;
+    const id = `group:${group.id}:assignment-group`;
+    const saved = existing.get(id) || {};
+    next.push({
+      ...saved,
+      id,
+      assignment_group_id: String(group.id),
+      assignment_group_name: group.name,
+      assignment_id: null,
+      assignment_name: group.name,
+      assignment_ids: group.assignments.map((assignment) => String(assignment.id)),
+      assignments: group.assignments.map((assignment) => ({
+        id: String(assignment.id),
+        name: assignment.name,
+        points: assignment.points_possible,
+      })),
+      rules: group.rules || {},
+      criterion_id: null,
+      description: "Entire assignment group",
+      points: group.assignments.reduce((total, assignment) => total + Number(assignment.points_possible || 0), 0),
+      selected: saved.selected ?? true,
+      source: "assignment_group",
+      meets_threshold: saved.meets_threshold ?? outcome.evaluation.meets_threshold,
+      exceeds_threshold: saved.exceeds_threshold ?? 90,
+    });
+  }
   for (const assignmentId of outcome.assignment_ids) {
     const assignment = findAssignment(assignmentId);
     if (!assignment) continue;
@@ -572,6 +637,7 @@ function ensureOutcomeCriteria(outcome) {
       selected: assignment.rubric.length === 0,
       source: "assignment",
       meets_threshold: outcome.evaluation.meets_threshold,
+      exceeds_threshold: 90,
     });
     for (const criterion of assignment.rubric) {
       const id = `${assignment.id}:${criterion.id || criterion.description}`;
@@ -585,6 +651,7 @@ function ensureOutcomeCriteria(outcome) {
         selected: true,
         source: "rubric",
         meets_threshold: outcome.evaluation.meets_threshold,
+        exceeds_threshold: 90,
       });
     }
   }
@@ -618,6 +685,18 @@ function findAssignment(assignmentId) {
   return null;
 }
 
+function findAssignmentGroup(groupId) {
+  return assignmentGroups.find((group) => String(group.id) === String(groupId)) || null;
+}
+
+function selectedSubmissionAssignmentIds() {
+  const ids = outcomes.flatMap((outcome) => [
+    ...outcome.assignment_ids,
+    ...outcome.assignment_group_ids.flatMap((groupId) => (findAssignmentGroup(groupId)?.assignments || []).map((assignment) => String(assignment.id))),
+  ]);
+  return [...new Set(ids.map(String))];
+}
+
 function getSelectedAssignments(assignmentIds) {
   return assignmentIds.map((assignmentId) => findAssignment(assignmentId)).filter(Boolean);
 }
@@ -640,6 +719,7 @@ function importMapping(mapping) {
       name: mappedOutcome.name || "ABET Outcome",
       description: mappedOutcome.description || abetDescriptions[mappedOutcome.name] || "",
       assignment_ids: [],
+      assignment_group_ids: [],
       evaluation: {
         meets_threshold: Number(mappedOutcome.meets_threshold ?? 70),
         criteria: [],
@@ -647,6 +727,21 @@ function importMapping(mapping) {
     };
     const selectedSpecs = [];
     for (const item of mappingItemsForOutcome(mappedOutcome)) {
+      if (item.source === "assignment_group") {
+        const groupResult = findAssignmentGroupByName(item.assignment_group_name || item.assignment_name);
+        if (groupResult.status === "missing") {
+          summary.missing.push(`${outcome.name}: ${item.assignment_group_name || item.assignment_name || "Unnamed assignment group"}`);
+          continue;
+        }
+        if (groupResult.status === "ambiguous") {
+          summary.ambiguous.push(`${outcome.name}: ${item.assignment_group_name || item.assignment_name}`);
+          continue;
+        }
+        const group = groupResult.group;
+        if (!outcome.assignment_group_ids.includes(String(group.id))) outcome.assignment_group_ids.push(String(group.id));
+        selectedSpecs.push({ item, group });
+        continue;
+      }
       const assignmentResult = findAssignmentByName(item.assignment_name);
       if (assignmentResult.status === "missing") {
         summary.missing.push(`${outcome.name}: ${item.assignment_name || "Unnamed assessment"}`);
@@ -661,11 +756,31 @@ function importMapping(mapping) {
       selectedSpecs.push({ item, assignment });
     }
 
+    const groupedAssignmentIds = new Set(outcome.assignment_group_ids.flatMap((groupId) => (
+      findAssignmentGroup(groupId)?.assignments || []
+    ).map((assignment) => String(assignment.id))));
+    outcome.assignment_ids = outcome.assignment_ids.filter((assignmentId) => !groupedAssignmentIds.has(String(assignmentId)));
+    for (let index = selectedSpecs.length - 1; index >= 0; index -= 1) {
+      if (selectedSpecs[index].assignment && groupedAssignmentIds.has(String(selectedSpecs[index].assignment.id))) selectedSpecs.splice(index, 1);
+    }
+
     ensureOutcomeCriteria(outcome);
     for (const criterion of outcome.evaluation.criteria) {
       criterion.selected = false;
     }
     for (const spec of selectedSpecs) {
+      if (spec.group) {
+        const criterion = outcome.evaluation.criteria.find((candidate) => candidate.source === "assignment_group" && candidate.assignment_group_id === String(spec.group.id));
+        if (!criterion) {
+          summary.missing.push(`${outcome.name}: ${spec.group.name}`);
+          continue;
+        }
+        criterion.selected = true;
+        criterion.meets_threshold = Number(spec.item.meets_threshold ?? outcome.evaluation.meets_threshold ?? 70);
+        criterion.exceeds_threshold = Number(spec.item.exceeds_threshold ?? 90);
+        summary.matched += 1;
+        continue;
+      }
       const criterionResult = findCriterionForMapping(outcome, spec.assignment, spec.item);
       if (criterionResult.status === "missing") {
         summary.missing.push(`${outcome.name}: ${spec.assignment.name} / ${spec.item.criterion_description || "Whole assessment score"}`);
@@ -678,6 +793,7 @@ function importMapping(mapping) {
       const criterion = criterionResult.criterion;
       criterion.selected = true;
       criterion.meets_threshold = Number(spec.item.meets_threshold ?? outcome.evaluation.meets_threshold ?? 70);
+      criterion.exceeds_threshold = Number(spec.item.exceeds_threshold ?? 90);
       enforceWholeAssignmentExclusivity(outcome, criterion);
       summary.matched += 1;
     }
@@ -694,9 +810,11 @@ function mappingItemsForOutcome(mappedOutcome) {
     .filter((criterion) => criterion.selected)
     .map((criterion) => ({
       assignment_name: criterion.assignment_name,
+      assignment_group_name: criterion.assignment_group_name,
       source: criterion.source,
       criterion_description: criterion.description,
       meets_threshold: criterion.meets_threshold,
+      exceeds_threshold: criterion.exceeds_threshold,
     }));
 }
 
@@ -771,6 +889,14 @@ function findAssignmentByName(name) {
   return { status: "missing" };
 }
 
+function findAssignmentGroupByName(name) {
+  const target = normalizeMappingText(name);
+  const matches = assignmentGroups.filter((group) => normalizeMappingText(group.name) === target);
+  if (matches.length === 1) return { status: "matched", group: matches[0] };
+  if (matches.length > 1) return { status: "ambiguous", matches };
+  return { status: "missing" };
+}
+
 function findCriterionForMapping(outcome, assignment, item) {
   const description = normalizeMappingText(item.criterion_description);
   const source = item.source === "assignment" || ["whole assignment score", "whole assessment score"].includes(description) ? "assignment" : "rubric";
@@ -823,15 +949,16 @@ function renderResults(results) {
   for (const result of results) {
     const attainedCount = Number(result.counts.meets || 0);
     const attainedPercent = Number(result.percentages.meets || 0);
+    const attainmentClass = Number(result.overall_attained_percent || 0) >= 70 ? "attained" : "not-attained";
     const card = document.createElement("section");
     card.className = "result-card";
     card.innerHTML = `
       <h2>${escapeHtml(result.outcome_name)}</h2>
       <div class="muted">Attains threshold ${result.meets_threshold}% · ${escapeHtml(result.score_mode_label || "")} · ${escapeHtml(result.strategy_label || "")}</div>
-      <div class="overall-attained">
-        Overall Attained:
-        <strong>${result.overall_attained_count}/${result.overall_known_count}</strong>
-        <strong>${result.overall_attained_percent}%</strong>
+      <div class="overall-attained ${attainmentClass}">
+        <span>Overall Attainment</span>
+        <strong class="overall-attained-percent">${result.overall_attained_percent}%</strong>
+        <span>(${result.overall_attained_count}/${result.overall_known_count})</span>
         <span class="muted">(Attains, excluding Unknown)</span>
       </div>
       <div class="summary-grid">
@@ -872,9 +999,11 @@ function criterionOverviewTable(criteria, defaultMeetsThreshold) {
         <tr>
           <th>Assessment</th>
           <th>Item</th>
-          <th>Attains threshold</th>
-          <th>Overall Attained</th>
-          <th>Attains</th>
+          <th>Meets threshold</th>
+          <th>Exceeds threshold</th>
+          <th>Attains (Exceeds + Meets)</th>
+          <th>Exceeds</th>
+          <th>Meets</th>
           <th>Does Not Meet</th>
           <th>Unknown</th>
         </tr>
@@ -885,9 +1014,11 @@ function criterionOverviewTable(criteria, defaultMeetsThreshold) {
             <td>${escapeHtml(criterion.assignment_name)}</td>
             <td>${escapeHtml(displayEvidenceDescription(criterion.description))}</td>
             <td>${criterion.meets_threshold || defaultMeetsThreshold}%</td>
-            <td>${criterion.percentages.attained}%</td>
+            <td>${criterion.exceeds_threshold || 90}%</td>
+            <td>${Number(criterion.counts.exceeds || 0) + Number(criterion.counts.meets || 0)} (${criterion.percentages.attained}%)</td>
+            <td>${criterion.counts.exceeds || 0} (${criterion.percentages.exceeds || 0}%)</td>
             <td>${criterion.counts.meets} (${criterion.percentages.meets}%)</td>
-            <td>${criterion.counts.does_not_meet} (${criterion.percentages.does_not_meet}%)</td>
+            <td>${criterion.counts.insufficient || 0} (${criterion.percentages.insufficient || 0}%)</td>
             <td>${criterion.counts.unknown} (${criterion.percentages.unknown}%)</td>
           </tr>
         `).join("")}

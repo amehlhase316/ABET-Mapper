@@ -197,6 +197,11 @@ document.querySelector("#mappingFile")?.addEventListener("change", async (event)
     const mapping = JSON.parse(await file.text());
     const importResult = importMapping(mapping);
     outcomes = importResult.outcomes;
+    openSections = {};
+    const outcomesNeedingReview = new Set(importResult.unresolvedOutcomeIds || []);
+    for (const outcome of outcomes) {
+      openSections[`outcome:${outcome.id}`] = outcomesNeedingReview.has(outcome.id);
+    }
     latestResults = [];
     resultsContainer.innerHTML = "";
     updateExportState();
@@ -713,7 +718,9 @@ function importMapping(mapping) {
   const mappedOutcomes = Array.isArray(mapping?.outcomes) ? mapping.outcomes : [];
   if (!mappedOutcomes.length) throw new Error("No outcomes found in mapping JSON.");
   const summary = { matched: 0, missing: [], ambiguous: [] };
+  const unresolvedOutcomeIds = [];
   const imported = mappedOutcomes.map((mappedOutcome) => {
+    const unresolvedBefore = summary.missing.length + summary.ambiguous.length;
     const outcome = {
       id: crypto.randomUUID(),
       name: mappedOutcome.name || "ABET Outcome",
@@ -797,9 +804,12 @@ function importMapping(mapping) {
       enforceWholeAssignmentExclusivity(outcome, criterion);
       summary.matched += 1;
     }
+    if (summary.missing.length + summary.ambiguous.length > unresolvedBefore) {
+      unresolvedOutcomeIds.push(outcome.id);
+    }
     return outcome;
   });
-  return { outcomes: imported, summary };
+  return { outcomes: imported, summary, unresolvedOutcomeIds };
 }
 
 function mappingItemsForOutcome(mappedOutcome) {

@@ -201,15 +201,20 @@ class CanvasClient:
         return result
 
     def sections(self, course_id: str) -> list[dict[str, Any]]:
+        section_records = self.get_paginated(
+            f"courses/{course_id}/sections",
+            {
+                "per_page": 100,
+            },
+        )
         enrollments = self.get_paginated(
             f"courses/{course_id}/enrollments",
             {
                 "per_page": 100,
                 "type[]": "StudentEnrollment",
-                "include[]": ["user", "section"],
             },
         )
-        return section_summaries(enrollments)
+        return section_summaries(enrollments, section_records)
 
 
 def course_summary(course: dict[str, Any]) -> dict[str, Any]:
@@ -303,22 +308,27 @@ def submission_summary(submission: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def section_summaries(enrollments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def section_summaries(
+    enrollments: list[dict[str, Any]],
+    section_records: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    section_by_id = {
+        str(section.get("id")): section
+        for section in section_records or []
+        if section.get("id") is not None
+    }
     sections: dict[str, dict[str, Any]] = {}
     for enrollment in enrollments:
         user_id = str(enrollment.get("user_id") or "")
         if not user_id:
             continue
-        section = enrollment.get("section") or {}
-        section_id = str(
-            enrollment.get("course_section_id")
-            or section.get("id")
-            or enrollment.get("course_section_id")
-            or "unknown"
-        )
+        enrollment_section = enrollment.get("section") or {}
+        section_id = str(enrollment.get("course_section_id") or enrollment_section.get("id") or "unknown")
+        section = section_by_id.get(section_id) or enrollment_section
         section_name = (
             section.get("name")
             or enrollment.get("course_section_name")
+            or section.get("sis_section_id")
             or f"Section {section_id}"
         )
         entry = sections.setdefault(
@@ -326,6 +336,8 @@ def section_summaries(enrollments: list[dict[str, Any]]) -> list[dict[str, Any]]
             {
                 "id": section_id,
                 "name": section_name,
+                "sis_section_id": section.get("sis_section_id"),
+                "integration_id": section.get("integration_id"),
                 "student_ids": [],
             },
         )
@@ -592,7 +604,12 @@ def report_output_path(course: dict[str, Any], suffix: str | None = None, extens
 def course_for_section(course: dict[str, Any], section: dict[str, Any]) -> dict[str, Any]:
     section_name = section.get("name") or "Section"
     result = dict(course)
-    result["section"] = {"id": section.get("id"), "name": section_name}
+    result["section"] = {
+        "id": section.get("id"),
+        "name": section_name,
+        "sis_section_id": section.get("sis_section_id"),
+        "integration_id": section.get("integration_id"),
+    }
     return result
 
 
